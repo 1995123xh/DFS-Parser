@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.special as spp
 import scipy.integrate as integrate
+import cPickle
 # import iminuit
 
 
@@ -281,6 +282,39 @@ class getxvals:
         self.disconnect(self.clickCid)
         plt.close()
 
+def bg_correction_auto(RSLT):
+    print('Background correction :')
+    # Create an object to store clicks on canvas, see definition
+    # Pause
+    start = 1
+    bins = 10
+    while True:
+        print('Automatically using the first {0} bins for background'.format(bins))
+        for i in range(len(RSLT)):
+            if max(RSLT[i]) == 0:
+                break
+        bgs = []
+        for peak_shape in RSLT[0:i]:
+            bgs += [np.mean(peak_shape[start: bins+start])]
+        print('Background values: ', bgs)
+        print('Average: ', np.mean(bgs))
+        print('Observed standard variation: ', np.std(bgs))
+        print('Plotting background for all cycles')
+        plt.figure()
+        plt.plot(RSLT.T[start:bins+start])
+        approved = raw_input('(O)kay, or (N)ew bin value? ').upper()
+        plt.close()
+        if approved == 'O':
+            break
+        else:
+            bins = int(raw_input('Input your new bin value: ').strip())
+
+    print('Using this for all cycles')
+    for peak_shape in RSLT[0:i]:
+        peak_shape -= np.mean(bgs)
+
+    return RSLT
+
 
 def masker(REF_M, RSLT):
     '''To exclude part of the mass spectrum '''
@@ -310,6 +344,22 @@ def nearest_point(m, masses):
 
 def peakshape(mass, center, sigma, cupwidth):
     '''Model of the recorded peak shapes, assume Gaussian ion beam'''
+    return ((spp.erf((mass - center + cupwidth) / sigma) -
+             spp.erf((mass - center - cupwidth) / sigma)))
+
+def peakshape_13(mass, center, sigma, cupwidth):
+    '''Model of the recorded peak shapes, assume Gaussian ion beam'''
+    return ((spp.erf((mass - center + cupwidth) / sigma) -
+             spp.erf((mass - center - cupwidth) / sigma)))
+
+def peakshape_D(mass, center13, sigma, cupwidth):
+    '''Model of the recorded peak shapes, assume Gaussian ion beam'''
+    center = center13+0.00292
+    return ((spp.erf((mass - center + cupwidth) / sigma) -
+             spp.erf((mass - center - cupwidth) / sigma)))
+def peakshape_adduct(mass, center13, sigma, cupwidth):
+    '''Model of the recorded peak shapes, assume Gaussian ion beam'''
+    center = center13+0.00447
     return ((spp.erf((mass - center + cupwidth) / sigma) -
              spp.erf((mass - center - cupwidth) / sigma)))
 
@@ -388,3 +438,107 @@ def peakExporter(PEAKS, variables, FILENAME,CLN_INT,INT):
 
     #actually exporting the data
     exporter(areas_raw,FILENAME+'_areas.csv')
+
+def peakExporter_threePeaks(PEAKS, variables, FILENAME,CLN_INT,INT,threePeaks = False):
+    '''Exports the amplitudes and integrated peak areas that are the basis for the deltas'''
+    #calculating mean cumulative counts for used scans
+    onPeak=False
+    indStart=0
+    SUM_RSLT=[]
+    for i in range(1,len(CLN_INT)):
+        if CLN_INT[i] !=0 and not onPeak:
+            indStart=i
+            onPeak = True
+
+        elif CLN_INT[i] ==0 and onPeak:
+            SUM_RSLT.append(np.mean(np.sum(INT[indStart:i],axis=1)))
+            onPeak = False
+
+    #pulling out peak fit data from variables
+    cupwidths=[]
+    sigmas=[]
+    areas=np.zeros((len(variables),PEAKS))
+    areas_raw=np.zeros((len(variables),PEAKS))
+    amps=np.zeros((len(variables),PEAKS))
+    centers=np.zeros((len(variables),PEAKS))
+    relativeAreas=np.zeros((len(variables),PEAKS))
+    for i in range(len(variables)):
+        cupwidths.append(variables[i]['cupwidth'])
+        sigmas.append(variables[i]['sigma'])
+        if threePeaks:
+            center13='center'+str(13)
+        for j in range(PEAKS):
+            amp_j='amp'+str(j)
+            center_j='center'+str(j)
+            amps[i][j]=variables[i][amp_j]
+            if not threePeaks:
+                centers[i][j]=variables[i][center_j]
+            peakModel= lambda x: amps[i][j]*peakshape(x,centers[i][j],sigmas[i],cupwidths[i])
+            lowerBound= centers[i][j]-8*sigmas[i]
+            upperBound = centers[i][j]+8*sigmas[i]
+            areas[i][j]= integrate.quad(peakModel,lowerBound,upperBound)[0] #integrate over the peak to get the area
+            relativeAreas[i][j] = areas[i][j]/areas[i][0]
+
+        firstPeak=SUM_RSLT[i]/np.sum(relativeAreas[i]) #solving the system of equations to get the absolute abundance of the first peak
+        areas_raw[i]=[k*firstPeak for k in relativeAreas[i]] #applying this to all other possbile areas
+
+    # Ordering areas into sample/std columns
+    areas_ordered = []
+    for k in range(int(len(areas_raw)/2.0)+1):
+        try:
+            areas_ordered.append(np.concatenate((areas_raw[k*2], areas_raw[k*2+1])))
+        except(IndexError):
+            try:
+                areas_ordered.append(areas_raw[k*2])
+            except(IndexError):
+                break
+
+    #actually exporting the data
+    exporter(areas_ordered,FILENAME+'_areas.csv')
+
+def importer(FILENAME):
+    fileImport = open(FILENAME, 'rU')
+    fileReader = csv.reader(fileImport, dialect = 'excel')
+    data = []
+    for line in fileReader:
+        data.append([float(i) for i in line])
+
+    fileImport.close()
+    return data
+
+def autoImporter():
+    ''' Imports all files needed for a DFS fit, assuming they're all in the same
+    folder and were exported together'''
+    FILENAME = raw_input('Drag in MASSES file of choice ').rstrip().rstrip('_MASSES.csv')
+    toImport = ['MASSES', 'INT', 'REF_M', 'RSLT', 'errs', 'CLN_INT']
+    dataDict = {}
+
+    for item in toImport:
+        thisFILENAME = FILENAME + '_' + item + '.csv'
+        dataDict[item] = importer(thisFILENAME)
+
+    # Now, some cleanup to do
+    # REF_M is a numpy array, not a list
+    dataDict['REF_M'] = np.asarray(dataDict['REF_M'])
+
+    # export, in alphabetical order for easy remembering
+    return(dataDict['CLN_INT'],dataDict['errs'], dataDict['INT'],
+    dataDict['MASSES'], dataDict['REF_M'], dataDict['RSLT'])
+
+def autoPickler(FILENAME, dataDict):
+    '''exporting dict with all the necessary data using cPickle'''
+
+    file = open(FILENAME + '_pickled', 'w')
+    cPickle.dump(dataDict, file)
+    print('Relevant data was stored in file: ' + FILENAME + ' ')
+    file.close()
+
+def autoUnpickler(FILENAME):
+    '''Importing a dict with all the necessary data using cPickle'''
+
+    file = open(FILENAME, 'r+')
+    dataDict = cPickle.load(file)
+    print('Data successfully imported ')
+    file.close()
+    return(dataDict['CLN_INT'],dataDict['errs'], dataDict['INT'],
+    dataDict['MASSES'], dataDict['MAX_INT'], dataDict['REF_M'], dataDict['RSLT'])
