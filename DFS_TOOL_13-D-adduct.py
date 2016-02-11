@@ -13,14 +13,16 @@ import iminuit
 import probfit
 # import minuit
 import DFS_func
+import os
 from itertools import combinations
 
 while True:
     print(' (N)ew file \n (I)mport old file \n (Q)uit')
     modeChoice = raw_input('Select an option: ').lower()
+    plt.ion()
     if modeChoice == 'n':
         # Dynamic plotting in the whole program
-        plt.ion()
+
 
         # For drag-and-drop capacity on windows systems
         # Ask for file name otherwise
@@ -28,6 +30,8 @@ while True:
             FILENAME = raw_input('Name of the file to parse ? ').rstrip()
         else:
             FILENAME = sys.argv[1]
+        FILENAME = FILENAME.strip('"')
+        FILENAME = os.path.abspath(FILENAME)
 
         FILE = open(FILENAME, 'r')
         FILENAME = FILENAME.rstrip('.txt')
