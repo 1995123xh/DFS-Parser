@@ -33,7 +33,7 @@ while True:
         FILENAME = FILENAME.rstrip('.txt')
 
         # EXTRACTING DATA FROM THE FILE
-        MAX_INT, INT, MASSES, index = DFS_func.parser(FILE)
+        MAX_INT, INT, MASSES, index, SCAN_TIMES = DFS_func.parser(FILE)
 
         # CORRECTION OF DATA REPORTING ERRORS
         # STEP 1 : FINDING A REFERENCE LIST OF MASSES
@@ -143,7 +143,7 @@ while True:
         plt.close()
         answer = raw_input('Do you want to correct for background? Y/N ')
         if answer == 'Y':
-            answer2 = raw_input('(A)utomatic low side or with (C)lick? ').upper()
+            answer2 = raw_input('(A)utomatic either side or with (C)lick? ').upper()
             if answer2 == 'C':
                 RSLT = DFS_func.bg_correction(RSLT)
             else:
@@ -213,6 +213,7 @@ while True:
                 dataDict['REF_M'] = REF_M
                 dataDict['RSLT'] = RSLT
                 dataDict['MAX_INT'] = MAX_INT
+                dataDict['SCAN_TIMES'] = SCAN_TIMES
                 DFS_func.autoPickler(FILENAME, dataDict)
             else:
                 print('No export')
@@ -384,14 +385,17 @@ while True:
 
         choice = raw_input('Do you want to export the peak intensities (Y/N)? ')
         if choice.upper() =='Y':
-            DFS_func.peakExporter_threePeaks(PEAKS,variables, FILENAME, CLN_INT, INT, threePeaks = True)
+            areas_raw,areas_ordered = DFS_func.peakExporter_threePeaks(PEAKS,variables, FILENAME, CLN_INT, INT, threePeaks = True)
+            DFS_func.exporter(areas_ordered,FILENAME+'_areas.csv')
             print('Integrated peak intensities exported into .csv file')
-
+            print('Calculating counting statistics limits')
+            delta_std = DFS_func.countingStatisticsCalculator(SCAN_TIMES,variables, REF_M,KEPT_WIDTH,areas_raw)
+            print(' cnt sts limit for one cycle: {0:.4} \n for full acquisition: {1:.4} '.format(np.mean(delta_std),np.mean(delta_std/np.sqrt(len(delta_std)))))
 
     if modeChoice == 'i':
         print('Importing all necessary data from files ')
         FILENAME = raw_input('Drag in a cPickle file to import: ').rstrip()
-        CLN_INT, errs, INT, MASSES, MAX_INT, REF_M, RSLT = DFS_func.autoUnpickler(FILENAME)
+        CLN_INT, errs, INT, MASSES, MAX_INT, REF_M, RSLT, SCAN_TIMES = DFS_func.autoUnpickler(FILENAME)
         FILENAME = FILENAME.rstrip('_pickled')
         print('All data imported ')
         print('Processing data now ')
@@ -538,6 +542,7 @@ while True:
                     plt.subplot(2, 5, 1 + i + j * 5)
                     chi2[i + j * 5].draw(m[i + j * 5])
 
+
         # STEP THREE : OUTPUTS
 
         if len(variables) > 1:
@@ -562,8 +567,12 @@ while True:
 
         choice = raw_input('Do you want to export the peak intensities (Y/N)? ')
         if choice.upper() =='Y':
-            DFS_func.peakExporter_threePeaks(PEAKS,variables, FILENAME, CLN_INT, INT, threePeaks = True)
+            areas_raw,areas_ordered = DFS_func.peakExporter_threePeaks(PEAKS,variables, FILENAME, CLN_INT, INT, threePeaks = True)
+            DFS_func.exporter(areas_ordered,FILENAME+'_areas.csv')
             print('Integrated peak intensities exported into .csv file')
+            print('Calculating counting statistics limits')
+            delta_std = DFS_func.countingStatisticsCalculator(SCAN_TIMES,variables, REF_M,KEPT_WIDTH,areas_raw)
+            print(' cnt sts limit for one cycle: {0:.4} \n for full acquisition: {1:.4} '.format(np.mean(delta_std),np.mean(delta_std/np.sqrt(len(delta_std)))))
 
     if modeChoice == 'q':
         break

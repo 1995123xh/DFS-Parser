@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import scipy.special as spp
 import scipy.integrate as integrate
 import cPickle
+import scipy.stats as sst
 # import iminuit
 
 
@@ -16,9 +17,14 @@ def parser(FILE):
     MAX_MASSES = []
     INT = []
     MASSES = []
+    SCAN_TIMES = []
     SCANS = 0
     for line in FILE:
         line = line.rstrip()
+        # Find line with start time for calculation of expected counting statistics
+        if 'start_time' in line:
+            data = re.findall('[0-9]{0,20}\.[0-9]{0,10}', line)
+            SCAN_TIMES.append(float(data[0]))
         # Find line with number of counts in one position
         if 'PeakIntensity' in line:
             index = 0
@@ -41,7 +47,7 @@ def parser(FILE):
         INT[i] = INT[i][0:index - 1]
     print 'Number of scans :', len(INT)
 
-    return MAX_INT, INT, MASSES, index
+    return MAX_INT, INT, MASSES, index, SCAN_TIMES
 
 
 def refmassfinder(MASSES):
@@ -286,22 +292,29 @@ def bg_correction_auto(RSLT):
     print('Background correction :')
     # Create an object to store clicks on canvas, see definition
     # Pause
-    start = 1
+    start = 0
     bins = 10
     while True:
-        print('Automatically using the first {0} bins for background'.format(bins))
+        print('Automatically using the first or last {0} bins for background'.format(bins))
         for i in range(len(RSLT)):
             if max(RSLT[i]) == 0:
                 break
         bgs = []
-        for peak_shape in RSLT[0:i]:
-            bgs += [np.mean(peak_shape[start: bins+start])]
+        bgChoice = raw_input('(L)ow mass or (H)igh mass side? ').upper()
+        if bgChoice == 'H':
+            for peak_shape in RSLT[0:i]:
+                bgs += [np.mean(peak_shape[-(bins+start): -start])]
+            plt.figure()
+            plt.plot(RSLT.T[-(bins+start): -start])
+        else:
+            for peak_shape in RSLT[0:i]:
+                bgs += [np.mean(peak_shape[start: bins+start])]
+            plt.figure()
+            plt.plot(RSLT.T[start:bins+start])
         print('Background values: ', bgs)
         print('Average: ', np.mean(bgs))
         print('Observed standard variation: ', np.std(bgs))
         print('Plotting background for all cycles')
-        plt.figure()
-        plt.plot(RSLT.T[start:bins+start])
         approved = raw_input('(O)kay, or (N)ew bin value? ').upper()
         plt.close()
         if approved == 'O':
@@ -436,8 +449,8 @@ def peakExporter(PEAKS, variables, FILENAME,CLN_INT,INT):
         areas_raw[i]=[k*firstPeak for k in relativeAreas[i]] #applying this to all other possbile areas
 
 
-    #actually exporting the data
-    exporter(areas_raw,FILENAME+'_areas.csv')
+    return(areas_raw,areas_ordered)
+    # exporter(areas_raw,FILENAME+'_areas.csv')
 
 def peakExporter_threePeaks(PEAKS, variables, FILENAME,CLN_INT,INT,threePeaks = False):
     '''Exports the amplitudes and integrated peak areas that are the basis for the deltas'''
@@ -492,9 +505,9 @@ def peakExporter_threePeaks(PEAKS, variables, FILENAME,CLN_INT,INT,threePeaks = 
                 areas_ordered.append(areas_raw[k*2])
             except(IndexError):
                 break
-
+    return(areas_raw,areas_ordered)
     #actually exporting the data
-    exporter(areas_ordered,FILENAME+'_areas.csv')
+
 
 def importer(FILENAME):
     fileImport = open(FILENAME, 'rU')
@@ -510,7 +523,7 @@ def autoImporter():
     ''' Imports all files needed for a DFS fit, assuming they're all in the same
     folder and were exported together'''
     FILENAME = raw_input('Drag in MASSES file of choice ').rstrip().rstrip('_MASSES.csv')
-    toImport = ['MASSES', 'INT', 'REF_M', 'RSLT', 'errs', 'CLN_INT']
+    toImport = ['MASSES', 'INT', 'REF_M', 'RSLT', 'errs', 'CLN_INT','SCAN_TIMES']
     dataDict = {}
 
     for item in toImport:
@@ -523,7 +536,7 @@ def autoImporter():
 
     # export, in alphabetical order for easy remembering
     return(dataDict['CLN_INT'],dataDict['errs'], dataDict['INT'],
-    dataDict['MASSES'], dataDict['REF_M'], dataDict['RSLT'])
+    dataDict['MASSES'], dataDict['REF_M'], dataDict['RSLT'], dataDict['SCAN_TIMES'])
 
 def autoPickler(FILENAME, dataDict):
     '''exporting dict with all the necessary data using cPickle'''
@@ -541,4 +554,28 @@ def autoUnpickler(FILENAME):
     print('Data successfully imported ')
     file.close()
     return(dataDict['CLN_INT'],dataDict['errs'], dataDict['INT'],
-    dataDict['MASSES'], dataDict['MAX_INT'], dataDict['REF_M'], dataDict['RSLT'])
+    dataDict['MASSES'], dataDict['MAX_INT'], dataDict['REF_M'], dataDict['RSLT'], dataDict['SCAN_TIMES'])
+
+
+def countingStatisticsCalculator(SCAN_TIMES,variables, REF_M,KEPT_WIDTH, areas_raw):
+    '''Calculate counting statistics limits for a measurement'''
+    # Calculate length of a single scan
+    SCAN_TIMES = np.asarray(SCAN_TIMES)
+    # scanLength based on mode of all scan Lengths, in seconds
+    scanLength = sst.mode(SCAN_TIMES[1:]-SCAN_TIMES[:-1])[0][0]*60
+    # total measurement time for one half cycle
+    cycleTime = KEPT_WIDTH*scanLength
+    # width of scan, in AMU. Ignoring very last of Ref M, bc can have problems there
+    massWidth = REF_M[-2]-REF_M[0]
+    # average width of beams for duration of acq, based on greater of beam width or cup width
+    peakWidth = max(np.mean([i['sigma'] for i in variables]),np.mean([i['cupwidth'] for i in variables]))
+    # count time (s), given 1-sigma relative beam width compared to whole scan
+    countTime = peakWidth*2/massWidth*cycleTime
+    # calculating counting stats for each cycle
+    # assumes measurement on 1e7 amplifier
+    del_std = []
+    for j in range(int(len(areas_raw)/2)):
+        i=j*2
+        del_std.append(np.sqrt((1/areas_raw[i][0]+1/areas_raw[i][1]+1/areas_raw[i+1][0]+1/areas_raw[i+1][1])/countTime)*1000)
+
+    return(del_std)
