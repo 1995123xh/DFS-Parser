@@ -11,9 +11,11 @@ import numpy as np
 # import scipy.special as spp
 import iminuit
 import probfit
+import os
 # import minuit
 import DFS_func
 from itertools import combinations
+import time
 
 # Dynamic plottig in the whole program
 plt.ion()
@@ -21,15 +23,17 @@ plt.ion()
 # For drag-and-drop capacity on windows systems
 # Ask for file name otherwise
 if (len(sys.argv) < 2):
-    FILENAME = raw_input('Name of the file to parse ? ')
+    FILENAME = raw_input('Name of the file to parse ? ').rstrip()
 else:
     FILENAME = sys.argv[1]
+FILENAME = FILENAME.strip('"')
+FILENAME = os.path.abspath(FILENAME)
 
 FILE = open(FILENAME, 'r')
 FILENAME = FILENAME.rstrip('.txt')
 
 # EXTRACTING DATA FROM THE FILE
-MAX_INT, INT, MASSES, index = DFS_func.parser(FILE)
+MAX_INT, INT, MASSES, index, SCAN_TIMES = DFS_func.parser(FILE)
 
 # CORRECTION OF DATA REPORTING ERRORS
 # STEP 1 : FINDING A REFERENCE LIST OF MASSES
@@ -62,9 +66,9 @@ while True:
 INCLUDED = []
 STRIPPED_BEFORE = 5
 KEPT_WIDTH = 5
-lowSignalSelected = False
+lowSignalSelected = True
 # MASKING DATA NEAR CHANGES OF BELLOW
-INCLUDED = DFS_func.selecter(MAX_INT, INCLUDED, STRIPPED_BEFORE, KEPT_WIDTH)
+INCLUDED = DFS_func.lowSelecter(MAX_INT, INCLUDED, INT, STRIPPED_BEFORE, KEPT_WIDTH)
 
 # CONSTRUCTING THE MASKED DATA
 # Adjusting the width of the selection window
@@ -347,8 +351,17 @@ if len(variables) == 1:
         print('Intensity : ' +
               str(variables[0]['amp' + str(i)]) + ' +/- ' + str(
                   errors[0]['amp' + str(i)]))
+time.sleep(1)
+
 
 choice = raw_input('Do you want to export the peak intensities (Y/N)? ')
+# if choice.upper() =='Y':
+#     DFS_func.peakExporter(PEAKS,variables, FILENAME, CLN_INT, INT)
+#     print('Integrated peak intensities exported into .csv file')
 if choice.upper() =='Y':
-    DFS_func.peakExporter(PEAKS,variables, FILENAME, CLN_INT, INT)
+    areas_raw,areas_ordered = DFS_func.peakExporter(PEAKS,variables, FILENAME, CLN_INT, INT)
+    DFS_func.exporter(areas_ordered,FILENAME+'_areas.csv')
     print('Integrated peak intensities exported into .csv file')
+    print('Calculating counting statistics limits')
+    delta_std = DFS_func.countingStatisticsCalculator(SCAN_TIMES,variables, REF_M,KEPT_WIDTH,areas_raw)
+    print(' cnt sts limit for one cycle: {0:.4} \n for full acquisition: {1:.4} '.format(np.mean(delta_std),np.mean(delta_std/np.sqrt(len(delta_std)))))

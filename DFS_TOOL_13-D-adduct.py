@@ -70,9 +70,9 @@ while True:
         INCLUDED = []
         STRIPPED_BEFORE = 5
         KEPT_WIDTH = 5
-        lowSignalSelected = False
+        lowSignalSelected = True
         # MASKING DATA NEAR CHANGES OF BELLOW
-        INCLUDED = DFS_func.selecter(MAX_INT, INCLUDED, STRIPPED_BEFORE, KEPT_WIDTH)
+        INCLUDED = DFS_func.lowSelecter(MAX_INT, INCLUDED, INT, STRIPPED_BEFORE, KEPT_WIDTH)
 
         # CONSTRUCTING THE MASKED DATA
         # Adjusting the width of the selection window

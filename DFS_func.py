@@ -448,6 +448,15 @@ def peakExporter(PEAKS, variables, FILENAME,CLN_INT,INT):
         firstPeak=SUM_RSLT[i]/np.sum(relativeAreas[i]) #solving the system of equations to get the absolute abundance of the first peak
         areas_raw[i]=[k*firstPeak for k in relativeAreas[i]] #applying this to all other possbile areas
 
+    areas_ordered = []
+    for k in range(int(len(areas_raw)/2.0)+1):
+        try:
+            areas_ordered.append(np.concatenate((areas_raw[k*2], areas_raw[k*2+1])))
+        except(IndexError):
+            try:
+                areas_ordered.append(areas_raw[k*2])
+            except(IndexError):
+                break
 
     return(areas_raw,areas_ordered)
     # exporter(areas_raw,FILENAME+'_areas.csv')
