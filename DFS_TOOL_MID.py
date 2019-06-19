@@ -240,6 +240,25 @@ while True:
             LINE2=[['delta2', 'err'],[d2, stderr2]]
             output=[RSLT, LINE1, LINE2]
             DFS_func.exporter(output ,FILENAME+'-parsed.csv')
+        if len(RSLT[1])==4:
+            R1=RSLT[:,1].reshape(len(RSLT),1)/RSLT[:,0].reshape(len(RSLT),1)
+            R2=RSLT[:,2].reshape(len(RSLT),1)/RSLT[:,0].reshape(len(RSLT),1)
+            RSLT=np.append(RSLT, R1, 1)
+            RSLT=np.append(RSLT, R2, 1)
+            deltas1=[]
+            deltas2=[]
+            for i in range(1, len(RSLT)):
+                if i%2!=0:
+                    deltas1=np.append(deltas1, 1000*(RSLT[i][4]*2/(RSLT[i-1][4]+RSLT[i+1][3]))-1000)
+                    deltas2=np.append(deltas2, 1000*(RSLT[i][5]*2/(RSLT[i-1][5]+RSLT[i+1][4]))-1000)
+            d1=np.mean(deltas1)
+            d2=np.mean(deltas2)
+            stderr1=np.std(deltas1)/np.sqrt(len(deltas1))
+            stderr2=np.std(deltas2)/np.sqrt(len(deltas2))
+            LINE1=[['delta1', 'err'],[d1, stderr1]]
+            LINE2=[['delta2', 'err'],[d2, stderr2]]
+            output=[RSLT, LINE1, LINE2]
+            DFS_func.exporter(output ,FILENAME+'-parsed.csv')
             print('exported')
         # EXPORT OF CLEANED DATA AND ERRORS
         while True:
